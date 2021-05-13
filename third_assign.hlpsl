@@ -1,0 +1,201 @@
+%% PROTOCOL: Security Enhancements of Smart Card-Based
+%%Remote User Password Authentication Scheme with
+%%Session Key Agreement
+%% K is a random nonce so it should be a local variable 
+%% nat stands for natural number 
+%% text normal text
+
+
+% A is the user and S is the server
+role client(A, S: agent,
+	Kas: symmetric_key ,
+	F: hash_func,
+	SND, RCV: channel (dy))
+played_by A
+def=
+
+  local  State : nat, 
+         Na:text ,                       % random secret nonce 
+         Pwd:text,                      % random text as password
+         ID:text  ,                    % random text as id chosen everytime 
+         X:nat     ,                       % secret nonce 
+         P:nat      ,                      % random prime number for mod operator received from server
+         Sid:text  ,                       % smart card id
+         Ai:nat      ,                       % security parameter received from server
+         Bi:nat 	,			% security parameter received from server
+         Q:nat   ,                             %   received from server
+          Mod:hash_func	,		% hash function recieved from server
+         X1:text ,                            % to send the hash of password and id 
+         Y1:text  ,                            % to send bio hash value 
+         K:text    ,                           %   random value
+         Bio:text  ,                           % random value 
+         Ps:text    ,                            % private key of the server
+         C:text      ,                             % smart card parameter
+         M:text      ,                           % smart card parameter
+         D:text 	,			% smart card parameter 
+         A1:nat    ,                             % random value 
+         T:nat     ,                             % current time stamp  random value for simulation
+         Ts:nat    ,                             %  current time stamp of server 
+         V: text    ,                             % another securoty parameter of the server
+         Sk:text    ,                          % another securoty parameter of the server
+         MS:text    ,                             % Auth message from the server 
+         B:nat,         				%  ramdom nonce produced at the server
+         Auth:text                              % for final authenitication
+
+             
+  init   State := 0
+
+  transition 
+
+%% Registration initiated from user, send the ID along with Na secret nonce
+  1. State = 0   /\ RCV(start) =|>
+  			State':=1 /\  Na':=new()  
+  			/\  ID' :=new() 
+  			/\ Pwd' :=new() 
+  			/\ K' :=new() 
+  			/\ X1' := F(xor(Pwd',K')) 
+  			/\ Bio' :=new() 
+  			/\  Y1':= F(xor(Bio',K'))
+  			/\SND(X1'.Y1'.K'.ID'.{Na'}_Kas)
+  			/\ witness(S, A, nua, Na')
+
+% User receives smartcard from the server and stores it locally along with password
+  2. State= 1   /\ RCV(Ai'.Bi'.Ps'.Sid'.P')  /\ X1'=Ai' /\ Y1'=Bi'  =|>
+     State' := 2 /\ C':= F(Bi'.Mod(exp(F(ID'),X1').P'))       % smart card calculates some parameters and sends it to server 
+   			 /\ D':=Mod(F(exp(ID',A1')),P') /\ T':= new()
+   			/\M':=F(ID'.C'.D'.T')
+   			/\ SND({ID'.D'.M'.T'}_Kas) 
+   			
+ % receives the authentication message from the server 
+3. State' =2 /\ RCV({ID'.V'.MS'.Ts'.B'}_Kas) =|>
+			Sk':= Mod(exp(V',B').P')
+			/\ Auth':= F(ID'.C'.V'.Sk'.Ts')
+			/\witness(A,S,auth,nua.Ts')
+			
+			
+end role
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 	
+
+role server(A,S : agent,
+	    Kas: symmetric_key,
+	    F: hash_func,
+	    SND, RCV: channel (dy))
+	    
+played_by S
+
+def=
+
+  local State : nat,
+        Na, Ns : text,       % client and server nonces
+        Sid  :  text ,              % smart card ID
+        Ks : text     ,              % server secret key
+         Pwd:text    ,                  % random text as password
+         ID:text        ,                 % random text as id chosen everytime 
+         X:nat           ,                 % secret nonce 
+         P:nat            ,                % random prime number for mod operator received from server
+         Ai:nat            ,                 % security parameter received from server
+         Bi:nat 	,			% security parameter received from server
+         Q:nat   ,                             %   received from server
+         Mod:hash_func	,		% hash function recieved from server
+         X1:text ,                            % to receive  the hash of password and id  
+         Y1:text  ,                            % to receive bio hash value 
+         K:text    ,                           %   random value received from user
+         Bio:text  ,                           % random value  received from user for Bio information
+         C:text      ,                             % smart card parameter
+         C1:text     ,                           % smart card parameter
+         M:text       ,                          % smart card parameter
+          M1:text     ,                            % smart card parameter
+          MS:text      ,                           % Auth message from the server 
+         D:text 	,			% smart card parameter 
+         A1:nat    ,                             % random value 
+         T:nat     ,                             % current time stamp of user  random value for simulation
+         Ts:nat    ,                             %  current time stamp of server 
+         V: text    ,                             % another securoty parameter of the server
+         Sk:text    ,                          % another securoty parameter of the server
+         B:nat             				%  ramdom nonce produced at the server 
+         
+
+  init  State := 0
+
+  transition 
+   1. State = 0   /\ RCV(X1'.Y1'.K'.ID'.{Na'}_Kas)=|>
+      State' := 1 /\ X' :=new() /\  P':=new() 
+      			  /\ Sid' :=new()
+      			  /\ Ai' :=xor(X',Y1')
+                  	  /\ Bi' := Mod(F(exp(ID',xor(X',X1'))).P')
+                            /\ SND(Ai'.Bi'.Ks.Sid'.P')       
+                  	 /\ witness(S, A, server_user_sid, Sid')
+
+% receives smart card parameters from  user side when he/she tries to login
+   2. State= 1   /\ RCV({ID'.D'.M'.T'}_Kas) =|>
+      State' := 2 /\    C':=Mod(F(exp(ID,X')),P')                                                  
+                            /\    M1':=F(ID'.C'.D'.T')                                                          
+                            /\    request(S,A,M',M1',T)
+                            /\ B':=new()  
+		/\  V':=Mod(exp(F(ID'),B').P')     	
+		 /\ Sk':=Mod(exp(D',B').P')
+   		 /\ Ts':=new()
+   		/\ MS':=F(ID'.C'.V'.Sk'.Ts')      
+   		 /\ SND({ID'.V'.MS'.Ts'.B'}_Kas)
+   			 
+                 
+end role
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 	
+
+role session(A, S: agent,
+	     Kas:symmetric_key, F: function)
+def=
+
+  local %SK: message,
+        SNDA, SNDS, RCVA, RCVS: channel (dy)
+
+  %init SK := K(A.S)
+
+  composition
+       client(A,S,Kas,F,SNDA,RCVA)
+    /\ server(A,S,Kas,F,SNDS,RCVS)
+
+end role
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 	
+
+role environment()
+def=
+
+ const 
+	nua, cid, user_server_tid, user_server_v, server_user_sid,
+	a, s : agent,
+       	k:symmetric_key, 
+       	f ,mod: hash_func,
+       	auth: protocol_id
+
+ intruder_knowledge = {a,s,f,mod}
+
+ composition
+      session(a,s,k,f)
+   %/\ session(i,s,k,f)
+   %/\ session(a,i,k,f)
+
+end role
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+goal
+
+  %secrecy_of SK
+  secrecy_of k
+  authentication_on nua	% User nonce generated during registration is weak auth
+  authentication_on server_user_sid % Ticket identifies user issuing request
+ 
+
+  %Server authenticates Client on auth
+  authentication_on auth
+
+
+end goal
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+environment()
